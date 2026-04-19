@@ -1,6 +1,7 @@
 package org.example.tests;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.example.assertions.SortAssertions.assertPricesNonDecreasingInts;
+import static org.example.assertions.SortAssertions.assertPricesNonIncreasingInts;
 
 import org.example.core.TestBase;
 import org.example.models.SortMode;
@@ -15,19 +16,16 @@ public class HousingSortingBehaviorTest extends TestBase {
     housing.openHome();
     housing.translateToEnglish();
     housing.clickHousingFromHome();
-    housing.search("a");
 
     // Step 1: lowest to highest
     housing.setSortMode(SortMode.PRICE_ASC);
-    assertThat(page.url())
-        .as("Expected URL to reflect ascending price sort")
-        .contains("sort=priceasc");
+    var ascPrices = housing.readFirstVisibleEuroPrices(20);
+    assertPricesNonDecreasingInts(ascPrices);
 
     // Step 2: highest to lowest
     housing.setSortMode(SortMode.PRICE_DESC);
-    assertThat(page.url())
-        .as("Expected URL to reflect descending price sort")
-        .contains("sort=pricedsc");
+    var descPrices = housing.readFirstVisibleEuroPrices(20);
+    assertPricesNonIncreasingInts(descPrices);
   }
 }
 
