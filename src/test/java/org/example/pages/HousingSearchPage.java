@@ -3,8 +3,11 @@ package org.example.pages;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.LoadState;
+import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -178,6 +181,210 @@ public final class HousingSearchPage extends BasePage {
     navigateWithSort(sortValue);
   }
 
+  /**
+   * Opens the sort dropdown, then selects lowest-to-highest price. Tries UI controls first;
+   * falls back to URL {@code sort=priceasc} if no matching control is found.
+   */
+  public void selectLowestToHighestFromSortDropdown() {
+    openSortMenu();
+    Locator asc = page.locator(
+        "button[class*='cl-search-sort-mode-priceasc'], "
+            + "button[class*='cl-search-sort-mode-price-asc'], "
+            + "a[class*='cl-search-sort-mode-priceasc']");
+    if (asc.count() > 0) {
+      try {
+        asc.first().click();
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        closeSortMenuBestEffort();
+        waitForEuroPricesInDom();
+        return;
+      } catch (RuntimeException ignored) {
+      }
+    }
+    closeSortMenuBestEffort();
+    navigateWithSort("priceasc");
+    waitForEuroPricesInDom();
+  }
+
+  /**
+   * Opens the sort dropdown, then selects highest-to-lowest price. Tries UI controls first;
+   * falls back to URL {@code sort=pricedsc} if no matching control is found.
+   */
+  public void selectHighestToLowestFromSortDropdown() {
+    openSortMenu();
+    Locator desc = page.locator(
+        "button[class*='cl-search-sort-mode-pricedsc'], "
+            + "button[class*='cl-search-sort-mode-pricedesc'], "
+            + "button[class*='cl-search-sort-mode-price-desc'], "
+            + "a[class*='cl-search-sort-mode-pricedsc']");
+    if (desc.count() > 0) {
+      try {
+        desc.first().click();
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        closeSortMenuBestEffort();
+        waitForEuroPricesInDom();
+        return;
+      } catch (RuntimeException ignored) {
+      }
+    }
+    closeSortMenuBestEffort();
+    navigateWithSort("pricedsc");
+    waitForEuroPricesInDom();
+  }
+
+  /**
+   * Opens the sort dropdown, then selects newest-first (typically {@code sort=date}).
+   */
+  public void selectNewestFromSortDropdown() {
+    openSortMenu();
+    Locator newest = page.locator(
+        "button[class*='cl-search-sort-mode-newest'], a[class*='cl-search-sort-mode-newest']");
+    if (newest.count() > 0) {
+      try {
+        newest.first().click();
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        closeSortMenuBestEffort();
+        return;
+      } catch (RuntimeException ignored) {
+      }
+    }
+    closeSortMenuBestEffort();
+    navigateWithSort("date");
+  }
+
+  /**
+   * Opens the sort dropdown, then selects oldest-first. Falls back to {@code sort=dateasc} if no UI control.
+   */
+  public void selectOldestFromSortDropdown() {
+    openSortMenu();
+    // Only match sort-mode controls (broad :has-text can hit unrelated buttons).
+    Locator oldest = page.locator(
+        "button[class*='cl-search-sort-mode-oldest'], "
+            + "a[class*='cl-search-sort-mode-oldest'], "
+            + "button[class*='cl-search-sort-mode-dateasc'], "
+            + "a[class*='cl-search-sort-mode-dateasc']");
+    if (oldest.count() > 0) {
+      try {
+        oldest.first().click();
+        page.waitForLoadState(LoadState.NETWORKIDLE);
+        closeSortMenuBestEffort();
+        waitForListingRowsAfterOldestSort(30_000);
+        return;
+      } catch (RuntimeException ignored) {
+      }
+    }
+    closeSortMenuBestEffort();
+    navigateWithSort("dateasc");
+    waitForListingRowsAfterOldestSort(30_000);
+  }
+
+  /**
+   * Absolute URLs for the first {@code limit} housing listing rows (detail pages).
+   */
+  public List<String> topListingAbsoluteUrls(int limit) {
+    String base = page.url();
+    int rowCount = resultsItems.count();
+    if (rowCount > 0) {
+      int n = Math.min(limit, rowCount);
+      ArrayList<String> out = new ArrayList<>();
+      for (int i = 0; i < n; i++) {
+        Locator link = resultsItems.nth(i).locator("a[href*='.html']").first();
+        if (link.count() == 0) {
+          continue;
+        }
+        String href = link.getAttribute("href");
+        if (href == null || href.isBlank()) {
+          continue;
+        }
+        out.add(resolveListingUrl(base, href));
+      }
+      if (!out.isEmpty()) {
+        return List.copyOf(out);
+      }
+    }
+    return topListingAbsoluteUrlsFromMainLinks(limit, base);
+  }
+
+  private static boolean looksLikeListingDetailHref(String href) {
+    if (href == null || href.isBlank()) {
+      return false;
+    }
+    String h = href.toLowerCase();
+    return h.contains("/d/") && h.contains(".html");
+  }
+
+  private static String resolveListingUrl(String base, String href) {
+    try {
+      return URI.create(base).resolve(href).toString();
+    } catch (IllegalArgumentException e) {
+      if (href.startsWith("http")) {
+        return href;
+      }
+      return "https://madrid.craigslist.org" + (href.startsWith("/") ? href : "/" + href);
+    }
+  }
+
+  /**
+   * When result rows use a different DOM (e.g. some sort modes), collect detail links from {@code main}.
+   */
+  private List<String> topListingAbsoluteUrlsFromMainLinks(int limit, String base) {
+    Locator anchors = page.locator("main a[href*='.html']");
+    int total = anchors.count();
+    LinkedHashSet<String> uniq = new LinkedHashSet<>();
+    for (int i = 0; i < total && uniq.size() < limit; i++) {
+      String href = anchors.nth(i).getAttribute("href");
+      if (!looksLikeListingDetailHref(href)) {
+        continue;
+      }
+      uniq.add(resolveListingUrl(base, href));
+    }
+    ArrayList<String> out = new ArrayList<>(uniq);
+    if (out.isEmpty()) {
+      throw new AssertionError("No listing rows to open; debug: " + debugCounts());
+    }
+    return List.copyOf(out);
+  }
+
+  /** Waits until at least one housing result row is present (SPA may paint after sort). */
+  private void waitForListingRows(int timeoutMs) {
+    page.waitForFunction(
+        "() => {"
+            + "const rows = document.querySelectorAll("
+            + "'li.cl-search-result, li.result-row, li.cl-static-search-result, li[data-pid]');"
+            + "if (rows.length > 0) return true;"
+            + "const links = [...document.querySelectorAll('main a[href*=\".html\"]')]"
+            + ".filter(a => { const h = (a.getAttribute('href')||''); return h.includes('/d/'); });"
+            + "return links.length >= 1;"
+            + "}",
+        null,
+        new Page.WaitForFunctionOptions().setTimeout(timeoutMs));
+  }
+
+  /**
+   * After oldest-first sort, retry on the canonical housing URL if the SPA left the grid empty
+   * (e.g. odd redirect state).
+   */
+  private void waitForListingRowsAfterOldestSort(int timeoutMs) {
+    try {
+      waitForListingRows(timeoutMs);
+    } catch (RuntimeException ignored) {
+      page.navigate("https://madrid.craigslist.org/search/hhh?lang=en&sort=dateasc");
+      page.waitForLoadState(LoadState.NETWORKIDLE);
+      waitForListingRows(timeoutMs);
+    }
+  }
+
+  private void waitForEuroPricesInDom() {
+    try {
+      page.waitForFunction(
+          "() => document.body != null && /€\\s*[0-9]/.test(document.body.innerText)",
+          null,
+          new Page.WaitForFunctionOptions().setTimeout(25_000));
+    } catch (RuntimeException ignored) {
+      page.waitForTimeout(1500);
+    }
+  }
+
   public List<ListingCard> readTopListings(int limit) {
     int total = resultsItems.count();
     int n = Math.min(limit, total);
@@ -197,12 +404,58 @@ public final class HousingSearchPage extends BasePage {
     String text = page.innerText("body");
     Pattern p = Pattern.compile("€\\s*([0-9.]+)");
     Matcher m = p.matcher(text);
-    java.util.ArrayList<Integer> out = new java.util.ArrayList<>();
+    ArrayList<Integer> out = new ArrayList<>();
     while (m.find() && out.size() < limit) {
       String raw = m.group(1);
       parseEuroPrice("€" + raw).ifPresent(out::add);
     }
     return List.copyOf(out);
+  }
+
+  /** True when URL points at Madrid housing search (hhh). */
+  public boolean isOnHousingSearch() {
+    String u = page.url();
+    return u.contains("/search/hhh") || u.contains("/d/housing/");
+  }
+
+  /** Count of listing rows matched by result locators. */
+  public int resultListingCount() {
+    return resultsItems.count();
+  }
+
+  /**
+   * Euro prices from each result row in order. Skips rows with no parseable price.
+   */
+  public List<Integer> readEuroPricesFromListingRows(int maxRows) {
+    int n = Math.min(maxRows, resultsItems.count());
+    ArrayList<Integer> out = new ArrayList<>();
+    for (int i = 0; i < n; i++) {
+      Locator row = resultsItems.nth(i);
+      String priceRaw = firstNonBlankText(row.locator(".price, .result-price, .priceinfo .price"));
+      parseEuroPrice(priceRaw).ifPresent(out::add);
+    }
+    return List.copyOf(out);
+  }
+
+  /** Query string contains sort=value (ignores #fragment). */
+  public boolean currentUrlHasSortParam(String sortValue) {
+    String u = page.url();
+    int hash = u.indexOf('#');
+    if (hash >= 0) {
+      u = u.substring(0, hash);
+    }
+    return u.contains("sort=" + sortValue);
+  }
+
+  /**
+   * Prices for ordering checks: prefer per-row prices, fall back to body text when rows lack .price.
+   */
+  public List<Integer> readEuroPricesForOrdering(int maxRows) {
+    List<Integer> rowPrices = readEuroPricesFromListingRows(maxRows);
+    if (rowPrices.size() >= 2) {
+      return rowPrices;
+    }
+    return readFirstVisibleEuroPrices(Math.max(maxRows, 20));
   }
 
   private String debugCounts() {
@@ -259,8 +512,8 @@ public final class HousingSearchPage extends BasePage {
 
   private void openSortMenu() {
     sortCombo.first().click();
-    // Best-effort: wait for any sort option buttons to appear.
-    page.waitForTimeout(300);
+    // Dropdown animation / SPA paint: sort option buttons must exist before we click.
+    page.waitForTimeout(600);
   }
 
   private void closeSortMenuBestEffort() {

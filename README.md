@@ -4,10 +4,7 @@ This repository contains a small, maintainable **Java + Playwright** UI automati
 
 - Site: `https://madrid.craigslist.org/`
 - Page: **Housing**
-- Verification:
-  - Default sort modes include **newest**, **price ↑**, **price ↓**
-  - After running a **search**, sort modes include **newest**, **price ↑**, **price ↓**, **upcoming**, **relevant**
-  - Sorting by **price ↑ / price ↓** produces correctly ordered results (for listings that expose numeric prices)
+- Verification: open site → English → Housing → sort **lowest→highest** or **highest→lowest** → read visible € prices → compare to that list sorted **ascending** or **descending** respectively (must match).
 
 ## Prerequisites
 - Java 21+
