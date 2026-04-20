@@ -4,8 +4,8 @@ This repository contains a small, maintainable **Java + Playwright** UI automati
 
 - Site: `https://madrid.craigslist.org/`
 - Page: **Housing**
-- Verification: open site → English → Housing → sort **lowest→highest** or **highest→lowest** → read visible € prices → compare to that list sorted **ascending** or **descending** respectively (must match).
-
+- Verification: open site → English → Housing → sort **lowest→highest** & **highest→lowest** → read visible € prices → compare to that list sorted **ascending** & **descending** respectively (must match).
+- Verification: open site → English → Housing → sort **Neswest-First** & **Oldest-First** → retrieve dates → compare to that list sorted **ascending** & **descending** respectively (must match).
 ## Prerequisites
 - Java 21+
 - Maven 3.9+
